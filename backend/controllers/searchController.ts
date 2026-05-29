@@ -1,8 +1,9 @@
+import { Request, Response } from 'express';
 import mongoose, { Types } from 'mongoose';
 import SearchLog from '../models/SearchLog.js';
 import { generateEmbedding } from '../utils/embeddings.js';
 import { LRUCache } from 'lru-cache';
-import { Request, Response } from 'express';
+import { logger } from '../utils/logger.js';
 import {
   computeRRF,
   applySearchThreshold,
@@ -135,7 +136,7 @@ export const semanticSearch = async (req: Request, res: Response): Promise<void>
 
     res.json({ results: filtered, total: filtered.length, cached: false });
   } catch (error) {
-    console.error('Search error:', error);
+    logger.error('Search error', { error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ message: 'Search failed', error: (error as Error).message });
   }
 };
@@ -147,13 +148,13 @@ export const getTrending = async (req: Request, res: Response): Promise<void> =>
     const trending = await SearchLog.aggregate([
       {
         $group: {
-          _id: { $toLower: '$query' }, // Group by case-insensitive query
-          count: { $sum: 1 },          // Tally total searches
-          lastSearched: { $max: '$createdAt' }, 
+          _id: { $toLower: '$query' },
+          count: { $sum: 1 },
+          lastSearched: { $max: '$createdAt' },
         },
       },
-      { $sort: { count: -1 } }, // Sort by highest count first
-      { $limit: 6 },            // Take top 6
+      { $sort: { count: -1 } },
+      { $limit: 6 },
       {
         $project: {
           _id: 0,
@@ -167,5 +168,42 @@ export const getTrending = async (req: Request, res: Response): Promise<void> =>
     res.json({ trending });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: (error as Error).message });
+  }
+};
+
+// GET /api/search/suggest?q=<query>
+// Lightweight text-only FAQ suggestion for SearchBar dropdown — no auth required
+export const getSuggest = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const q = (req.query.q as string)?.trim();
+    if (!q || q.length < 2) {
+      res.json({ suggestions: [] });
+      return;
+    }
+
+    const db = mongoose.connection.db;
+    if (!db) {
+      res.json({ suggestions: [] });
+      return;
+    }
+
+    // Escape special regex chars to prevent injection
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const results = await db
+      .collection('yaksha_faq_faqs')
+      .find(
+        {
+          question: { $regex: escaped, $options: 'i' },
+          status: 'approved',
+        },
+        { projection: { _id: 1, question: 1, category: 1 } }
+      )
+      .limit(5)
+      .toArray();
+
+    res.json({ suggestions: results });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
   }
 };

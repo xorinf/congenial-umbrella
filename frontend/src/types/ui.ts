@@ -35,6 +35,16 @@ export interface SearchResult {
   category?: string;
   upvotes?: unknown[];
   comments?: unknown[];
+  vectorScore?: number;
+  textScore?: number;
+}
+
+export interface FAQMatch {
+  _id: string;
+  question: string;
+  answer?: string;
+  category?: string;
+  similarity?: number;
 }
 
 export interface Category {

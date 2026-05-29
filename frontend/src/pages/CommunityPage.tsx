@@ -627,7 +627,7 @@ export default function CommunityPage() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  // If navigated here via ?ask=true (from navbar "Ask Question"), open the create dialog
+  // If navigated here via ?ask=true (from navbar "Ask Question") or ?post=<id> (from search)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('ask') === 'true') {
@@ -635,7 +635,17 @@ export default function CommunityPage() {
       // Clean the URL param so refresh doesn't re-trigger
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+    const postId = params.get('post');
+    if (postId) {
+      // Find the post in the already-loaded posts or fetch it
+      const found = posts.find((p) => p._id === postId);
+      if (found) {
+        setSelectedPost(found);
+      }
+      // Clean the URL param so refresh doesn't re-trigger
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [posts]);
 
   const fetchPosts = useCallback((pageNum = 1) => {
     if (pageNum === 1) setLoading(true);

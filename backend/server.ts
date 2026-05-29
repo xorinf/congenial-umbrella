@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
 import connectDB from './config/db.js';
 import authRoutes from './routes/auth.js';
 import faqRoutes from './routes/faq.js';
@@ -13,6 +14,7 @@ import searchRoutes from './routes/search.js';
 import adminRoutes from './routes/admin.js';
 import analyticsRoutes from './routes/analytics.js';
 import notificationRoutes from './routes/notification.js';
+import { logger } from './utils/logger.js';
 
 // Load environment variables (.env)
 dotenv.config();
@@ -29,7 +31,15 @@ app.use(async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// 1. Dynamic CORS Configuration (Must be first to handle preflight requests!)
+// 2. Request ID middleware — generates UUID for each request
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const requestId = uuidv4();
+  (req as Request & { id: string }).id = requestId;
+  res.setHeader('X-Request-ID', requestId);
+  next();
+});
+
+// 3. Dynamic CORS Configuration (Must be first to handle preflight requests!)
 // Defines which frontend domains are allowed to communicate with this API
 const allowedOrigins = [
   'http://localhost:5173',
@@ -55,7 +65,7 @@ app.use(cors({
   credentials: true, // Required to allow cookies/auth headers
 }));
 
-// 2. Security & Logging Middleware
+// 4. Security & Logging Middleware
 app.use(helmet({
   crossOriginResourcePolicy: false, // Adjusted to allow secure cross-origin API requests
 }));
@@ -117,7 +127,8 @@ app.get('/api/health', async (req: Request, res: Response) => {
 // 7. Global Error Handler
 // Catches unhandled errors across the app and standardizes the JSON response
 app.use((err: { status?: number; message?: string; stack?: string }, req: Request, res: Response, next: NextFunction) => {
-  console.error(err.stack);
+  const requestId: string = (req as Request & { id: string }).id || '-';
+  logger.error(err.stack || err.message || 'Unknown error', { status: err.status }, requestId);
   res.status(err.status || 500).json({
     message: err.message || 'Internal server error',
     // Only expose detailed stack traces in development mode for security
@@ -125,13 +136,13 @@ app.use((err: { status?: number; message?: string; stack?: string }, req: Reques
   });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 6767;
 
 // 8. Server Initialization
 // Prevents direct listening in production if deployed as a serverless function (e.g., Vercel)
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
-    console.log(`Yaksha FAQ Portal backend running on port ${PORT}`);
+    logger.info(`Yaksha FAQ Portal backend running on port ${PORT}`);
   });
 }
 
